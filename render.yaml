@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: confluence-mcp
+    env: docker
+    region: frankfurt  # или другой EU/ближайший регион
+    plan: starter      # или free для теста
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: CONFLUENCE_BASE_URL
+        value: https://confluence.yourcorp.com
+      - key: CONFLUENCE_PAT
+        sync: false
+      - key: MCP_API_KEY
+        sync: false
+      - key: PORT
+        value: 3000

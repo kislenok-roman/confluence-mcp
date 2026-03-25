@@ -1,0 +1,12 @@
+services:
+  confluence-mcp:
+    build: .
+    container_name: confluence-mcp
+    ports:
+      - "3000:3000"
+    environment:
+      CONFLUENCE_BASE_URL: "CONFLUENCE_BASE_URL"
+      CONFLUENCE_PAT: "CONFLUENCE_PAT"
+      MCP_API_KEY: "MCP_API_KEY"
+      PORT: "3000"
+    restart: unless-stopped
