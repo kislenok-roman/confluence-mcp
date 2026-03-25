@@ -184,7 +184,9 @@ registerTool(
   }
 );
 
-// === простая JSON-RPC обвязка ===
+// === Streamable HTTP MCP сервер с API-key авторизацией ===
+
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
 const app = express();
 app.use(express.json());
@@ -202,68 +204,44 @@ function apiKeyMiddleware(req: Request, res: Response, next: NextFunction) {
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 
-app.post('/mcp', apiKeyMiddleware, async (req: Request, res: Response) => {
-  try {
-    const { id, method, params } = req.body || {};
+async function main() {
+  const transport = new StreamableHTTPServerTransport({
+    // без path/app — SDK сам реализует MCP протокол
+  });
 
-    if (!method) {
-      return res.status(400).json({
-        jsonrpc: '2.0',
-        error: { code: -32600, message: 'Invalid Request' },
-        id: id ?? null,
-      });
+  await server.connect(transport);
+
+  // MCP endpoint — полностью передаём запрос в транспорт
+  app.post('/mcp', apiKeyMiddleware, async (req: Request, res: Response) => {
+    try {
+      // очень важно: не менять Accept/Content-Type вручную, Notion сам их задаёт
+      await transport.handleRequest(req, res, req.body);
+    } catch (error) {
+      console.error('Error handling MCP request:', error);
+      if (!res.headersSent) {
+        res.status(500).json({
+          jsonrpc: '2.0',
+          error: {
+            code: -32603,
+            message: 'Internal server error',
+          },
+          id: null,
+        });
+      }
     }
+  });
 
-    if (method !== 'tools/call') {
-      return res.status(400).json({
-        jsonrpc: '2.0',
-        error: { code: -32601, message: 'Method not found' },
-        id: id ?? null,
-      });
-    }
+  // health‑endpoint для проверки
+  app.get('/health', (_req: Request, res: Response) => {
+    res.json({ status: 'ok', service: 'confluence-mcp' });
+  });
 
-    const { name, arguments: args } = params || {};
-    if (!name) {
-      return res.status(400).json({
-        jsonrpc: '2.0',
-        error: { code: -32602, message: 'Missing tool name' },
-        id: id ?? null,
-      });
-    }
+  app.listen(port, () => {
+    console.log(`Confluence MCP server listening on port ${port} at /mcp`);
+  });
+}
 
-    const tool = toolRegistry.get(name);
-    if (!tool) {
-      return res.status(400).json({
-        jsonrpc: '2.0',
-        error: { code: -32601, message: `Tool not found: ${name}` },
-        id: id ?? null,
-      });
-    }
-
-    const result = await tool(args || {});
-
-    return res.json({
-      jsonrpc: '2.0',
-      id: id ?? null,
-      result,
-    });
-  } catch (error: any) {
-    console.error('Error handling /mcp request:', error);
-    return res.status(500).json({
-      jsonrpc: '2.0',
-      error: {
-        code: -32603,
-        message: error?.message || 'Internal error',
-      },
-      id: (req.body && req.body.id) || null,
-    });
-  }
-});
-
-app.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', service: 'confluence-mcp' });
-});
-
-app.listen(port, () => {
-  console.log(`Confluence MCP server listening on port ${port} at /mcp`);
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
 });
